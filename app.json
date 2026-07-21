@@ -1,25 +1,39 @@
 {
   "expo": {
-    "name": "Filebrowser",
-    "slug": "Filebrowser",
+    "name": "File Browser Native",
+    "slug": "file-browser-native",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/file-browser-wrapper-icon.png",
     "userInterfaceStyle": "light",
-    "ios": {
-      "supportsTablet": true
-    },
     "android": {
+      "package": "com.hesukastro.filebrowser",
+      "versionCode": 1,
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#071f3a",
+        "foregroundImage": "./assets/file-browser-wrapper-icon.png"
       },
       "predictiveBackGestureEnabled": false
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    }
+    "plugins": [
+      "expo-status-bar",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/file-browser-wrapper-icon.png",
+          "imageWidth": 220,
+          "resizeMode": "contain",
+          "backgroundColor": "#071f3a"
+        }
+      ],
+      "./plugins/withAndroidCleartext",
+      "expo-secure-store",
+      "expo-sharing",
+      "expo-video",
+      "expo-audio",
+      "expo-asset",
+      "expo-font"
+    ]
   }
 }
