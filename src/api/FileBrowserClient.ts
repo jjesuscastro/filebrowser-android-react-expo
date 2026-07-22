@@ -1,4 +1,5 @@
 import ReactNativeBlobUtil from 'react-native-blob-util';
+import { Platform } from 'react-native';
 import { ApiError, AuthenticatedUser, FileResource, ServerCapabilities, Share } from '../types';
 import { encodePath, normalizePath, normalizeServerUrl, safeFilename } from '../utils/path';
 
@@ -173,10 +174,14 @@ export class FileBrowserClient {
     const filename = safeFilename(normalizePath(remotePath).split('/').pop() ?? 'download');
     const directory = cacheOnly ? ReactNativeBlobUtil.fs.dirs.CacheDir : ReactNativeBlobUtil.fs.dirs.DownloadDir;
     const destination = `${directory}/${Date.now()}-${filename}`;
+    const modernAndroid = Platform.OS === 'android' && Number(Platform.Version) >= 29;
     const config = cacheOnly ? { path: destination } : {
       addAndroidDownloads: {
         useDownloadManager: true, notification: true, mediaScannable: true,
-        path: destination, title: filename, description: 'Downloading from File Browser',
+        title: filename, description: 'Downloading from File Browser',
+        // Android 10+ uses scoped storage. Registering the download in the
+        // public Downloads collection makes it visible to Files/Downloads apps.
+        ...(modernAndroid ? { storeInDownloads: true } : { path: destination }),
       },
     };
     return ReactNativeBlobUtil.config(config).fetch(
