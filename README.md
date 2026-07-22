@@ -26,4 +26,4 @@ The `preview` EAS profile creates an APK for direct installation. HTTP servers a
 
 ## Data and privacy
 
-The app stores the configured server URL in app preferences and the File Browser JWT in Android's encrypted credential storage. It has no analytics and sends no data to an application-owned backend. Downloads are handed to Android's download manager.
+The app stores the configured server URL in app preferences and the File Browser JWT in Android's encrypted credential storage. If “Keep me signed in” is selected, the login credentials are also kept in encrypted credential storage so the app can obtain a new JWT when the server session expires. Signing out or forgetting the server deletes them. It has no analytics and sends no data to an application-owned backend. Downloads are handed to Android's download manager.

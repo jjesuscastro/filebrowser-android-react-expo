@@ -7,6 +7,9 @@ import { normalizeServerUrl } from '../utils/path';
 
 const SERVER_KEY = 'filebrowser.serverUrl';
 const TOKEN_KEY = 'filebrowser.jwt';
+const CREDENTIALS_KEY = 'filebrowser.keepSignedInCredentials';
+
+type SavedCredentials = { username: string; password: string };
 
 type SessionContextValue = {
   booting: boolean;
@@ -14,8 +17,8 @@ type SessionContextValue = {
   connection: ServerConnection | null;
   user: AuthenticatedUser | null;
   savedServerUrl: string;
-  connect: (baseUrl: string, username: string, password: string) => Promise<void>;
-  login: (username: string, password: string) => Promise<void>;
+  connect: (baseUrl: string, username: string, password: string, keepSignedIn: boolean) => Promise<void>;
+  login: (username: string, password: string, keepSignedIn: boolean) => Promise<void>;
   logout: () => Promise<void>;
   forgetServer: () => Promise<void>;
 };
@@ -30,21 +33,53 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [savedServerUrl, setSavedServerUrl] = useState('');
 
   const configureClient = useCallback((next: FileBrowserClient) => {
+    let reauthentication: Promise<boolean> | null = null;
     next.onUnauthorized = () => {
-      setUser(null);
-      void SecureStore.deleteItemAsync(TOKEN_KEY);
+      if (reauthentication) return reauthentication;
+      reauthentication = (async () => {
+        try {
+          const saved = await SecureStore.getItemAsync(CREDENTIALS_KEY);
+          if (!saved) throw new Error('No saved credentials.');
+          const { username, password } = JSON.parse(saved) as SavedCredentials;
+          if (!username || !password) throw new Error('Invalid saved credentials.');
+          const token = await next.login(username, password);
+          await SecureStore.setItemAsync(TOKEN_KEY, token);
+          return true;
+        } catch {
+          next.setToken(null);
+          setUser(null);
+          setConnection(null);
+          await Promise.all([
+            SecureStore.deleteItemAsync(TOKEN_KEY),
+            SecureStore.deleteItemAsync(CREDENTIALS_KEY),
+          ]);
+          return false;
+        } finally {
+          reauthentication = null;
+        }
+      })();
+      return reauthentication;
     };
     setClient(next);
   }, []);
 
   useEffect(() => {
-    Promise.all([AsyncStorage.getItem(SERVER_KEY), SecureStore.getItemAsync(TOKEN_KEY)])
-      .then(async ([url, token]) => {
+    Promise.all([AsyncStorage.getItem(SERVER_KEY), SecureStore.getItemAsync(TOKEN_KEY), SecureStore.getItemAsync(CREDENTIALS_KEY)])
+      .then(async ([url, token, savedCredentials]) => {
         if (!url) return;
         setSavedServerUrl(url);
         const next = new FileBrowserClient(url, token);
         configureClient(next);
-        if (!token) return;
+        if (!token && savedCredentials) {
+          try {
+            const { username, password } = JSON.parse(savedCredentials) as SavedCredentials;
+            token = await next.login(username, password);
+            await SecureStore.setItemAsync(TOKEN_KEY, token);
+          } catch {
+            await SecureStore.deleteItemAsync(CREDENTIALS_KEY);
+          }
+        }
+        if (!next.getToken()) return;
         try {
           const [currentUser, capabilities] = await Promise.all([next.currentUser(), next.detectCapabilities()]);
           setUser(currentUser);
@@ -57,7 +92,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       .finally(() => setBooting(false));
   }, [configureClient]);
 
-  const establish = useCallback(async (next: FileBrowserClient, username: string, password: string) => {
+  const establish = useCallback(async (next: FileBrowserClient, username: string, password: string, keepSignedIn: boolean) => {
     await next.probe();
     const token = await next.login(username, password);
     try {
@@ -65,6 +100,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       await Promise.all([
         AsyncStorage.setItem(SERVER_KEY, next.baseUrl),
         SecureStore.setItemAsync(TOKEN_KEY, token),
+        keepSignedIn
+          ? SecureStore.setItemAsync(CREDENTIALS_KEY, JSON.stringify({ username, password } satisfies SavedCredentials))
+          : SecureStore.deleteItemAsync(CREDENTIALS_KEY),
       ]);
       configureClient(next);
       setSavedServerUrl(next.baseUrl);
@@ -79,24 +117,24 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, [configureClient]);
 
-  const connect = useCallback(async (baseUrl: string, username: string, password: string) => {
-    await establish(new FileBrowserClient(normalizeServerUrl(baseUrl)), username, password);
+  const connect = useCallback(async (baseUrl: string, username: string, password: string, keepSignedIn: boolean) => {
+    await establish(new FileBrowserClient(normalizeServerUrl(baseUrl)), username, password, keepSignedIn);
   }, [establish]);
 
-  const login = useCallback(async (username: string, password: string) => {
+  const login = useCallback(async (username: string, password: string, keepSignedIn: boolean) => {
     if (!client) throw new ApiError('Configure a server first.', 'unsupported');
-    await establish(client, username, password);
+    await establish(client, username, password, keepSignedIn);
   }, [client, establish]);
 
   const logout = useCallback(async () => {
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
+    await Promise.all([SecureStore.deleteItemAsync(TOKEN_KEY), SecureStore.deleteItemAsync(CREDENTIALS_KEY)]);
     client?.setToken(null);
     setUser(null);
     setConnection(null);
   }, [client]);
 
   const forgetServer = useCallback(async () => {
-    await Promise.all([AsyncStorage.removeItem(SERVER_KEY), SecureStore.deleteItemAsync(TOKEN_KEY)]);
+    await Promise.all([AsyncStorage.removeItem(SERVER_KEY), SecureStore.deleteItemAsync(TOKEN_KEY), SecureStore.deleteItemAsync(CREDENTIALS_KEY)]);
     setClient(null); setConnection(null); setUser(null); setSavedServerUrl('');
   }, []);
 

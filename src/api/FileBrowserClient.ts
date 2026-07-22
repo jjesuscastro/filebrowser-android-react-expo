@@ -2,7 +2,7 @@ import ReactNativeBlobUtil from 'react-native-blob-util';
 import { ApiError, AuthenticatedUser, FileResource, ServerCapabilities, Share } from '../types';
 import { encodePath, normalizePath, normalizeServerUrl, safeFilename } from '../utils/path';
 
-type RequestOptions = RequestInit & { timeoutMs?: number; authenticated?: boolean };
+type RequestOptions = RequestInit & { timeoutMs?: number; authenticated?: boolean; retryAuthentication?: boolean };
 type JwtPayload = { id?: number; user?: { id?: number }; exp?: number };
 
 function decodeJwtPayload(token: string): JwtPayload {
@@ -28,7 +28,7 @@ function categoryForStatus(status: number) {
 export class FileBrowserClient {
   readonly baseUrl: string;
   private token: string | null;
-  onUnauthorized?: () => void;
+  onUnauthorized?: () => Promise<boolean>;
 
   constructor(baseUrl: string, token: string | null = null) {
     this.baseUrl = normalizeServerUrl(baseUrl);
@@ -55,7 +55,10 @@ export class FileBrowserClient {
       if (!response.ok) {
         const message = (await response.text()).trim() || `Server returned ${response.status}.`;
         const error = new ApiError(message, categoryForStatus(response.status), response.status, response.status >= 500);
-        if (response.status === 401 && options.authenticated !== false) this.onUnauthorized?.();
+        if (response.status === 401 && options.authenticated !== false && options.retryAuthentication !== false && this.onUnauthorized) {
+          const reauthenticated = await this.onUnauthorized();
+          if (reauthenticated) return this.request(endpoint, { ...options, retryAuthentication: false });
+        }
         throw error;
       }
       return response;
