@@ -15,8 +15,9 @@ function errorMessage(error: unknown) {
 
 export function AuthScreen() {
   const { colors, sharedStyles } = useAppTheme();
-  const { connect, login, savedServerUrl, forgetServer } = useSession();
+  const { connect, login, savedServerUrl, savedSourceName, forgetServer } = useSession();
   const [serverUrl, setServerUrl] = useState(savedServerUrl);
+  const [sourceName, setSourceName] = useState(savedSourceName || 'srv');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [keepSignedIn, setKeepSignedIn] = useState(false);
@@ -27,11 +28,12 @@ export function AuthScreen() {
   const submit = async () => {
     if (!username.trim() || !password) { setError('Enter your username and password.'); return; }
     if (!usingSavedServer && !serverUrl.trim()) { setError('Enter your server address.'); return; }
+    if (!usingSavedServer && !sourceName.trim()) { setError('Enter your Quantum source name.'); return; }
     const run = async () => {
       setBusy(true); setError('');
       try {
         if (usingSavedServer) await login(username.trim(), password, keepSignedIn);
-        else await connect(serverUrl, username.trim(), password, keepSignedIn);
+        else await connect(serverUrl, sourceName.trim(), username.trim(), password, keepSignedIn);
       } catch (e) { setError(errorMessage(e)); }
       finally { setBusy(false); }
     };
@@ -47,8 +49,9 @@ export function AuthScreen() {
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}>
       <View style={sharedStyles.card}>
         <Text style={sharedStyles.title}>File Browser</Text>
-        <Text style={sharedStyles.subtitle}>{usingSavedServer ? `Sign in to ${savedServerUrl}` : 'Connect directly to your File Browser server.'}</Text>
+        <Text style={sharedStyles.subtitle}>{usingSavedServer ? `Sign in to ${savedServerUrl} · ${savedSourceName}` : 'Connect directly to your FileBrowser Quantum server.'}</Text>
         {!usingSavedServer && <><Text style={sharedStyles.label}>Server address</Text><TextInput autoCapitalize="none" autoCorrect={false} inputMode="url" value={serverUrl} onChangeText={setServerUrl} placeholder="https://files.example.com" placeholderTextColor={colors.muted} selectionColor={colors.blue} style={sharedStyles.input} /></>}
+        {!usingSavedServer && <><Text style={sharedStyles.label}>Source name</Text><TextInput autoCapitalize="none" autoCorrect={false} value={sourceName} onChangeText={setSourceName} placeholder="srv" placeholderTextColor={colors.muted} selectionColor={colors.blue} style={sharedStyles.input} /></>}
         <Text style={sharedStyles.label}>Username</Text>
         <TextInput autoCapitalize="none" autoCorrect={false} value={username} onChangeText={setUsername} placeholderTextColor={colors.muted} selectionColor={colors.blue} style={sharedStyles.input} />
         <Text style={sharedStyles.label}>Password</Text>
@@ -68,7 +71,7 @@ export function AuthScreen() {
         {error ? <Text accessibilityLiveRegion="polite" style={sharedStyles.error}>{error}</Text> : null}
         <Pressable disabled={busy} onPress={() => void submit()} style={[sharedStyles.button, busy && { opacity: .55 }]}>{busy ? <ActivityIndicator color="#fff" /> : <Text style={sharedStyles.buttonText}>Sign in</Text>}</Pressable>
         {usingSavedServer && <Pressable onPress={() => void forgetServer()} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>Use another server</Text></Pressable>}
-        <Text style={{ marginTop: 12, color: colors.muted, fontSize: 12, textAlign: 'center' }}>Requires File Browser 2.34.1 or newer</Text>
+        <Text style={{ marginTop: 12, color: colors.muted, fontSize: 12, textAlign: 'center' }}>Requires FileBrowser Quantum API access</Text>
       </View></ScrollView>
     </KeyboardAvoidingView>
   </SafeAreaView>;

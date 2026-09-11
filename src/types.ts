@@ -55,6 +55,7 @@ export type ServerCapabilities = {
 
 export type ServerConnection = {
   baseUrl: string;
+  sourceName: string;
   capabilities: ServerCapabilities;
 };
 

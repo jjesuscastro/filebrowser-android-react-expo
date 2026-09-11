@@ -3,7 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, BackHandler, FlatList, Modal, Pressable, RefreshControl, Share as NativeShare, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, BackHandler, FlatList, Image, Modal, Pressable, RefreshControl, Share as NativeShare, StyleSheet, Text, TextInput, View } from 'react-native';
 import { PromptModal } from '../components/PromptModal';
 import { FileIcon, fileVisual } from '../components/FileIcon';
 import { RootStackParams } from '../navigation';
@@ -33,6 +33,14 @@ function message(error: unknown) {
     return labels[error.category] ?? error.message;
   }
   return error instanceof Error ? error.message : 'The operation failed.';
+}
+
+function fileExtension(item: FileResource) {
+  return (item.extension || item.name.split('.').pop() || '').toLowerCase().replace('.', '');
+}
+
+function supportsThumbnail(item: FileResource) {
+  return !item.isDir && ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'avif', 'mp4', 'm4v', 'webm', 'mov', 'mkv'].includes(fileExtension(item));
 }
 
 export function FilesScreen({ navigation }: Props) {
@@ -210,25 +218,55 @@ export function FilesScreen({ navigation }: Props) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} colors={[colors.blue]} />}
         contentContainerStyle={items.length ? styles.list : styles.center}
         ListEmptyComponent={<Text style={styles.empty}>{searchResults ? 'No matches found.' : 'This folder is empty.'}</Text>}
-        renderItem={({ item }) => { const visual = fileVisual(item.name, item.isDir); return <Pressable onPress={() => open(item)} onLongPress={() => setSelected(item)} style={[grid ? styles.gridItem : styles.row, selected === item && styles.selected]}>
-          <View style={[grid ? styles.gridIconTile : styles.iconTile, { backgroundColor: dark ? `${visual.color}22` : visual.tint }]}><FileIcon name={item.name} isDir={item.isDir} size={grid ? 34 : 24} /></View>
+        renderItem={({ item }) => <Pressable onPress={() => open(item)} onLongPress={() => setSelected(item)} style={[grid ? styles.gridItem : styles.row, selected === item && styles.selected]}>
+          <FileThumb item={item} currentPath={path} grid={grid} previews={Boolean(connection?.capabilities.preview)} />
           <View style={grid ? { alignItems: 'center' } : { flex: 1 }}><Text numberOfLines={grid ? 2 : 1} style={[styles.name, grid && { textAlign: 'center' }]}>{item.name}</Text><Text style={styles.meta}>{item.isDir ? 'Folder' : bytes(item.size)} · {new Date(item.modified).toLocaleDateString()}</Text></View>
           {!grid && <Pressable accessibilityLabel={`Actions for ${item.name}`} onPress={() => setSelected(item)} style={styles.more}><Ionicons name="ellipsis-horizontal" color={colors.muted} size={20} /></Pressable>}
-        </Pressable>; }} />}
-    {user?.perm.create && <Pressable accessibilityLabel="Add files" onPress={() => setCreateMenu(true)} style={styles.fab}><Ionicons name="add" color="#fff" size={30} /></Pressable>}
+        </Pressable>}
+      />}
+    {user?.perm?.create && <Pressable accessibilityLabel="Add files" onPress={() => setCreateMenu(true)} style={styles.fab}><Ionicons name="add" color="#fff" size={30} /></Pressable>}
     <Modal transparent animationType="fade" visible={Boolean(selected)} onRequestClose={() => setSelected(null)}>
       <Pressable onPress={() => setSelected(null)} style={styles.modalBackdrop}><View style={styles.sheet}>
         <Text numberOfLines={2} style={styles.sheetTitle}>{selected?.name}</Text>
-        {selected && !selected.isDir && user?.perm.download && <Action label="Download" onPress={() => { const item = selected; setSelected(null); void download(item); }} />}
-        {user?.perm.rename && <Action label="Rename" onPress={() => beginPrompt('rename')} />}
-        {user?.perm.create && <Action label="Move" onPress={() => beginPrompt('move')} />}
-        {user?.perm.create && <Action label="Copy" onPress={() => beginPrompt('copy')} />}
-        {connection?.capabilities.shares && user?.perm.share && <Action label="Create public link" onPress={() => void shareSelected()} />}
-        {user?.perm.delete && <Action danger label="Delete" onPress={deleteSelected} />}
+        {selected && !selected.isDir && user?.perm?.download && <Action label="Download" onPress={() => { const item = selected; setSelected(null); void download(item); }} />}
+        {user?.perm?.rename && <Action label="Rename" onPress={() => beginPrompt('rename')} />}
+        {user?.perm?.create && <Action label="Move" onPress={() => beginPrompt('move')} />}
+        {user?.perm?.create && <Action label="Copy" onPress={() => beginPrompt('copy')} />}
+        {connection?.capabilities.shares && user?.perm?.share && <Action label="Create public link" onPress={() => void shareSelected()} />}
+        {user?.perm?.delete && <Action danger label="Delete" onPress={deleteSelected} />}
       </View></Pressable>
     </Modal>
     <Modal transparent animationType="fade" visible={createMenu} onRequestClose={() => setCreateMenu(false)}><Pressable onPress={() => setCreateMenu(false)} style={styles.modalBackdrop}><View style={styles.createSheet}><Text style={styles.createTitle}>Add to this folder</Text><View style={styles.createChoices}><Pressable onPress={() => { setCreateMenu(false); beginPrompt('folder'); }} style={styles.createChoice}><View style={[styles.createIcon, { backgroundColor: dark ? '#352b1b' : '#fff6e6' }]}><Ionicons name="folder-outline" color="#d88b16" size={28} /></View><Text style={styles.createLabel}>New folder</Text></Pressable><Pressable onPress={() => { setCreateMenu(false); void startUpload(); }} style={styles.createChoice}><View style={[styles.createIcon, { backgroundColor: dark ? colors.selected : '#edf5ff' }]}><Ionicons name="cloud-upload-outline" color={colors.blue} size={29} /></View><Text style={styles.createLabel}>Upload files</Text></Pressable></View></View></Pressable></Modal>
     <PromptModal visible={Boolean(prompt)} title={prompt === 'folder' ? 'New folder' : prompt === 'rename' ? 'Rename' : prompt === 'copy' ? 'Copy to path' : 'Move to path'} value={promptValue} onChange={setPromptValue} onCancel={() => setPrompt(null)} onConfirm={() => void confirmPrompt()} />
+  </View>;
+}
+
+function FileThumb({ item, currentPath, grid, previews }: { item: FileResource; currentPath: string; grid: boolean; previews: boolean }) {
+  const { client } = useSession();
+  const { colors, dark } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const [failed, setFailed] = useState(false);
+  const visual = fileVisual(item.name, item.isDir);
+  const itemPath = item.path?.startsWith('/') ? item.path : joinPath(currentPath, item.name);
+  const showThumbnail = previews && supportsThumbnail(item) && client && !failed;
+  const isVideo = visual.icon === 'play-circle';
+  const tileStyle = [
+    grid ? styles.gridIconTile : styles.iconTile,
+    showThumbnail ? styles.thumbnailTile : { backgroundColor: dark ? `${visual.color}22` : visual.tint },
+  ];
+
+  useEffect(() => setFailed(false), [itemPath]);
+
+  return <View style={tileStyle}>
+    {showThumbnail ? <>
+      <Image
+        source={{ uri: client.previewUrl(itemPath, grid ? 'large' : 'small'), headers: client.authHeaders() }}
+        resizeMode="cover"
+        onError={() => setFailed(true)}
+        style={styles.thumbnail}
+      />
+      {isVideo && <View style={styles.playBadge}><Ionicons name="play" color="#fff" size={grid ? 18 : 12} /></View>}
+    </> : <FileIcon name={item.name} isDir={item.isDir} size={grid ? 34 : 24} />}
   </View>;
 }
 
@@ -246,7 +284,7 @@ const makeStyles = (colors: AppColors) => StyleSheet.create({
   breadcrumbs: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 16, backgroundColor: colors.surface, borderBottomWidth: 1, borderColor: colors.border }, crumb: { maxWidth: 110, color: colors.blue, fontSize: 12, fontWeight: '600' }, separator: { color: colors.muted }, resultBar: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15 }, resultText: { flex: 1, marginRight: 8, color: colors.muted, fontSize: 12 }, compactControl: { height: 34, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 9, borderWidth: 1, borderColor: colors.border, borderRadius: 9, backgroundColor: colors.surface }, compactIconControl: { width: 36, height: 34, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: 9, backgroundColor: colors.surface }, sortText: { color: colors.muted, fontSize: 11, textTransform: 'capitalize' },
   list: { paddingHorizontal: 12, paddingBottom: 100 }, row: { flex: 1, minHeight: 72, marginVertical: 4, marginHorizontal: 3, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', borderRadius: 14, backgroundColor: colors.surface, elevation: 1 },
   gridItem: { flex: 1, minHeight: 156, margin: 5, padding: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.subtle, borderRadius: 16, backgroundColor: colors.surface }, selected: { borderWidth: 2, borderColor: colors.blue, backgroundColor: colors.selected },
-  iconTile: { width: 44, height: 44, marginRight: 12, alignItems: 'center', justifyContent: 'center', borderRadius: 12 }, gridIconTile: { width: 64, height: 64, marginBottom: 12, alignItems: 'center', justifyContent: 'center', borderRadius: 18 }, name: { color: colors.ink, fontSize: 14, fontWeight: '600' }, meta: { marginTop: 5, color: colors.muted, fontSize: 11 }, more: { width: 40, height: 48, alignItems: 'center', justifyContent: 'center' },
+  iconTile: { width: 44, height: 44, marginRight: 12, alignItems: 'center', justifyContent: 'center', borderRadius: 12, overflow: 'hidden' }, gridIconTile: { width: 74, height: 74, marginBottom: 12, alignItems: 'center', justifyContent: 'center', borderRadius: 14, overflow: 'hidden' }, thumbnailTile: { backgroundColor: colors.subtle }, thumbnail: { width: '100%', height: '100%' }, playBadge: { position: 'absolute', right: 5, bottom: 5, width: 24, height: 24, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: 'rgba(0,0,0,.62)' }, name: { color: colors.ink, fontSize: 14, fontWeight: '600' }, meta: { marginTop: 5, color: colors.muted, fontSize: 11 }, more: { width: 40, height: 48, alignItems: 'center', justifyContent: 'center' },
   center: { flex: 1, minHeight: 220, alignItems: 'center', justifyContent: 'center', padding: 28 }, empty: { color: colors.muted, textAlign: 'center' }, error: { marginBottom: 15, color: colors.danger, textAlign: 'center' }, retry: { minHeight: 42, justifyContent: 'center', paddingHorizontal: 20, borderRadius: 9, backgroundColor: colors.blue },
   fab: { position: 'absolute', right: 20, bottom: 24, width: 58, height: 58, alignItems: 'center', justifyContent: 'center', borderRadius: 29, backgroundColor: colors.blue, elevation: 8, shadowColor: colors.blue, shadowOpacity: .3, shadowRadius: 10 },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,.55)' }, sheet: { paddingBottom: 24, borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: colors.surface }, sheetTitle: { padding: 20, color: colors.ink, fontSize: 16, fontWeight: '700', borderBottomWidth: 1, borderColor: colors.border }, action: { minHeight: 54, justifyContent: 'center', paddingHorizontal: 24 }, actionText: { color: colors.ink, fontSize: 16 },

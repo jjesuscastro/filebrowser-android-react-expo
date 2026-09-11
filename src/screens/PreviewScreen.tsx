@@ -33,9 +33,8 @@ export function PreviewScreen({ route, navigation }: Props) {
   const [loading, setLoading] = useState(kind === 'text');
   const [busy, setBusy] = useState(false);
   const [imageVisible, setImageVisible] = useState(kind === 'image');
-  const token = client?.getToken() ?? '';
   const rawUrl = client?.rawUrl(file.path) ?? '';
-  const source = useMemo(() => ({ uri: rawUrl, headers: { 'X-Auth': token } }), [rawUrl, token]);
+  const source = useMemo(() => ({ uri: rawUrl, headers: client?.authHeaders() ?? {} }), [client, rawUrl]);
 
   useEffect(() => {
     navigation.setOptions({ headerShown: kind !== 'image', title: kind === 'video' ? 'Video player' : file.name });

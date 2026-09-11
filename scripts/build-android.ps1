@@ -15,10 +15,18 @@ if (-not $env:JAVA_HOME) {
 }
 
 if (-not $env:ANDROID_HOME) {
-  $defaultAndroidSdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
-  if (Test-Path -LiteralPath $defaultAndroidSdk) {
-    $env:ANDROID_HOME = $defaultAndroidSdk
+  if ($env:ANDROID_SDK_ROOT) {
+    $env:ANDROID_HOME = $env:ANDROID_SDK_ROOT
+  } else {
+    $defaultAndroidSdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
+    if (Test-Path -LiteralPath $defaultAndroidSdk) {
+      $env:ANDROID_HOME = $defaultAndroidSdk
+    }
   }
+}
+
+if ($env:ANDROID_HOME -and -not $env:ANDROID_SDK_ROOT) {
+  $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
 }
 
 if (-not $env:JAVA_HOME -or -not (Test-Path -LiteralPath (Join-Path $env:JAVA_HOME 'bin\java.exe'))) {
@@ -30,6 +38,10 @@ if (-not $env:ANDROID_HOME -or -not (Test-Path -LiteralPath $env:ANDROID_HOME)) 
 if (-not (Test-Path -LiteralPath $gradleWrapper)) {
   throw 'android\gradlew.bat is missing. Run npm run android:prebuild first.'
 }
+
+$localProperties = Join-Path $repositoryRoot 'android\local.properties'
+$escapedAndroidSdk = $env:ANDROID_HOME.Replace('\', '\\')
+Set-Content -LiteralPath $localProperties -Value "sdk.dir=$escapedAndroidSdk"
 
 $env:NODE_ENV = 'production'
 $gradleArguments = @('-p', (Join-Path $repositoryRoot 'android'), 'assembleRelease')

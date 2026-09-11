@@ -6,6 +6,7 @@ import { ApiError, AuthenticatedUser, ServerConnection } from '../types';
 import { normalizeServerUrl } from '../utils/path';
 
 const SERVER_KEY = 'filebrowser.serverUrl';
+const SOURCE_KEY = 'filebrowser.quantumSource';
 const TOKEN_KEY = 'filebrowser.jwt';
 const CREDENTIALS_KEY = 'filebrowser.keepSignedInCredentials';
 
@@ -17,7 +18,8 @@ type SessionContextValue = {
   connection: ServerConnection | null;
   user: AuthenticatedUser | null;
   savedServerUrl: string;
-  connect: (baseUrl: string, username: string, password: string, keepSignedIn: boolean) => Promise<void>;
+  savedSourceName: string;
+  connect: (baseUrl: string, sourceName: string, username: string, password: string, keepSignedIn: boolean) => Promise<void>;
   login: (username: string, password: string, keepSignedIn: boolean) => Promise<void>;
   logout: () => Promise<void>;
   forgetServer: () => Promise<void>;
@@ -31,6 +33,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [connection, setConnection] = useState<ServerConnection | null>(null);
   const [user, setUser] = useState<AuthenticatedUser | null>(null);
   const [savedServerUrl, setSavedServerUrl] = useState('');
+  const [savedSourceName, setSavedSourceName] = useState('srv');
 
   const configureClient = useCallback((next: FileBrowserClient) => {
     let reauthentication: Promise<boolean> | null = null;
@@ -64,11 +67,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    Promise.all([AsyncStorage.getItem(SERVER_KEY), SecureStore.getItemAsync(TOKEN_KEY), SecureStore.getItemAsync(CREDENTIALS_KEY)])
-      .then(async ([url, token, savedCredentials]) => {
+    Promise.all([AsyncStorage.getItem(SERVER_KEY), AsyncStorage.getItem(SOURCE_KEY), SecureStore.getItemAsync(TOKEN_KEY), SecureStore.getItemAsync(CREDENTIALS_KEY)])
+      .then(async ([url, sourceName, token, savedCredentials]) => {
         if (!url) return;
         setSavedServerUrl(url);
-        const next = new FileBrowserClient(url, token);
+        setSavedSourceName(sourceName || 'srv');
+        const next = new FileBrowserClient(url, token, sourceName || 'srv');
         configureClient(next);
         if (!token && savedCredentials) {
           try {
@@ -81,9 +85,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         }
         if (!next.getToken()) return;
         try {
-          const [currentUser, capabilities] = await Promise.all([next.currentUser(), next.detectCapabilities()]);
+          const currentUser = await next.currentUser();
+          const capabilities = await next.detectCapabilities();
           setUser(currentUser);
-          setConnection({ baseUrl: next.baseUrl, capabilities });
+          setConnection({ baseUrl: next.baseUrl, sourceName: next.getSourceName(), capabilities });
         } catch {
           await SecureStore.deleteItemAsync(TOKEN_KEY);
           next.setToken(null);
@@ -93,12 +98,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [configureClient]);
 
   const establish = useCallback(async (next: FileBrowserClient, username: string, password: string, keepSignedIn: boolean) => {
-    await next.probe();
     const token = await next.login(username, password);
     try {
-      const [currentUser, capabilities] = await Promise.all([next.currentUser(), next.detectCapabilities()]);
+      const currentUser = await next.currentUser();
+      const capabilities = await next.detectCapabilities();
       await Promise.all([
         AsyncStorage.setItem(SERVER_KEY, next.baseUrl),
+        AsyncStorage.setItem(SOURCE_KEY, next.getSourceName()),
         SecureStore.setItemAsync(TOKEN_KEY, token),
         keepSignedIn
           ? SecureStore.setItemAsync(CREDENTIALS_KEY, JSON.stringify({ username, password } satisfies SavedCredentials))
@@ -106,8 +112,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       ]);
       configureClient(next);
       setSavedServerUrl(next.baseUrl);
+      setSavedSourceName(next.getSourceName());
       setUser(currentUser);
-      setConnection({ baseUrl: next.baseUrl, capabilities });
+      setConnection({ baseUrl: next.baseUrl, sourceName: next.getSourceName(), capabilities });
     } catch (error) {
       next.setToken(null);
       if (error instanceof ApiError && error.category === 'not-found') {
@@ -117,8 +124,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, [configureClient]);
 
-  const connect = useCallback(async (baseUrl: string, username: string, password: string, keepSignedIn: boolean) => {
-    await establish(new FileBrowserClient(normalizeServerUrl(baseUrl)), username, password, keepSignedIn);
+  const connect = useCallback(async (baseUrl: string, sourceName: string, username: string, password: string, keepSignedIn: boolean) => {
+    await establish(new FileBrowserClient(normalizeServerUrl(baseUrl), null, sourceName), username, password, keepSignedIn);
   }, [establish]);
 
   const login = useCallback(async (username: string, password: string, keepSignedIn: boolean) => {
@@ -134,12 +141,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [client]);
 
   const forgetServer = useCallback(async () => {
-    await Promise.all([AsyncStorage.removeItem(SERVER_KEY), SecureStore.deleteItemAsync(TOKEN_KEY), SecureStore.deleteItemAsync(CREDENTIALS_KEY)]);
-    setClient(null); setConnection(null); setUser(null); setSavedServerUrl('');
+    await Promise.all([AsyncStorage.removeItem(SERVER_KEY), AsyncStorage.removeItem(SOURCE_KEY), SecureStore.deleteItemAsync(TOKEN_KEY), SecureStore.deleteItemAsync(CREDENTIALS_KEY)]);
+    setClient(null); setConnection(null); setUser(null); setSavedServerUrl(''); setSavedSourceName('srv');
   }, []);
 
-  const value = useMemo(() => ({ booting, client, connection, user, savedServerUrl, connect, login, logout, forgetServer }),
-    [booting, client, connection, user, savedServerUrl, connect, login, logout, forgetServer]);
+  const value = useMemo(() => ({ booting, client, connection, user, savedServerUrl, savedSourceName, connect, login, logout, forgetServer }),
+    [booting, client, connection, user, savedServerUrl, savedSourceName, connect, login, logout, forgetServer]);
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 

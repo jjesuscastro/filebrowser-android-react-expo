@@ -13,16 +13,30 @@ describe('FileBrowserClient requests', () => {
     globalThis.fetch = fetchMock;
   });
 
-  it('preserves a configured server subpath and sends X-Auth', async () => {
+  it('logs in with the Quantum auth endpoint and password header', async () => {
+    const token = 'aaa.bbb.ccc';
+    fetchMock.mockResolvedValue(new Response(token, { status: 200 }));
+    const client = new FileBrowserClient('https://example.test');
+
+    await expect(client.login('admin', 'secret')).resolves.toBe(token);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://example.test/api/auth/login?username=admin&recaptcha=',
+      expect.objectContaining({ method: 'POST', headers: expect.any(Headers) }),
+    );
+    const options = fetchMock.mock.calls[0][1] as RequestInit;
+    expect((options.headers as Headers).get('X-Password')).toBe('secret');
+  });
+
+  it('preserves a configured server subpath and sends Bearer auth', async () => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify({ isDir: true, items: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     const client = new FileBrowserClient('https://example.test/apps/files/', 'jwt-token');
     await client.list('/My Files');
     expect(fetchMock).toHaveBeenCalledWith(
-      'https://example.test/apps/files/api/resources/My%20Files',
+      'https://example.test/apps/files/api/resources?path=%2FMy+Files&source=srv',
       expect.objectContaining({ headers: expect.any(Headers) }),
     );
     const options = fetchMock.mock.calls[0][1] as RequestInit;
-    expect((options.headers as Headers).get('X-Auth')).toBe('jwt-token');
+    expect((options.headers as Headers).get('Authorization')).toBe('Bearer jwt-token');
   });
 
   it('normalizes conflict responses', async () => {
@@ -55,6 +69,6 @@ describe('FileBrowserClient requests', () => {
     await expect(client.list('/')).resolves.toMatchObject({ isDir: true });
     expect(client.onUnauthorized).toHaveBeenCalledTimes(1);
     const retryOptions = fetchMock.mock.calls[1][1] as RequestInit;
-    expect((retryOptions.headers as Headers).get('X-Auth')).toBe('refreshed-token');
+    expect((retryOptions.headers as Headers).get('Authorization')).toBe('Bearer refreshed-token');
   });
 });
