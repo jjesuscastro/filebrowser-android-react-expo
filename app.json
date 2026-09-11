@@ -7,7 +7,7 @@
     "icon": "./assets/file-browser-wrapper-icon.png",
     "userInterfaceStyle": "light",
     "android": {
-      "package": "com.hesukastro.filebrowser",
+      "package": "com.hesukastro.filebrowsernative",
       "versionCode": 1,
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {

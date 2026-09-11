@@ -23,7 +23,7 @@ The `production` profile in `eas.json` is already configured to create an app bu
 Check `app.json` before publishing:
 
 - App name: `File Browser Native`
-- Package name: `com.hesukastro.filebrowser`
+- Package name: `com.hesukastro.filebrowsernative`
 - Version: `1.0.0`
 - Version code: `1`
 
